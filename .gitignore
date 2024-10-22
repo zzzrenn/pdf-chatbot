@@ -1,0 +1,12 @@
+# virtual env
+.venv/ 
+**/*.pyc
+
+# database volume
+volumes/
+
+# env variable
+.env
+
+# documents
+documents/
