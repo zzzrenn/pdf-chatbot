@@ -1,7 +1,9 @@
 # backend/chatbot.py
 from langchain_openai  import ChatOpenAI, OpenAIEmbeddings
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.chains import create_retrieval_chain, create_history_aware_retriever
+from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_milvus import Milvus
 from typing import Dict
 
@@ -18,33 +20,75 @@ class Chatbot:
             text_field="text",
             connection_args={"uri": vector_store_uri},
         )
-        self.memory = ConversationBufferMemory(
-            output_key="answer",
-            memory_key="chat_history",
-            return_messages=True
-        )
+        self.chat_history = []
         self.chain = self._create_chain()
     
     def _create_chain(self):
-        return ConversationalRetrievalChain.from_llm(
-            llm=self.llm,
-            retriever=self.vector_store.as_retriever(search_kwargs={"k": 5}),
-            memory=self.memory,
-            return_source_documents=True
+        # Define the prompt to contextualize the question
+        contextualize_q_system_prompt = (
+            "Given a chat history and the latest user question "
+            "which might reference context in the chat history, "
+            "formulate a standalone question which can be understood "
+            "without the chat history. Do NOT answer the question, just "
+            "reformulate it if needed and otherwise return it as is."
         )
-    
-    def get_response(self, question: str) -> Dict:
-        response = self.chain({"question": question})
+        contextualize_q_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", contextualize_q_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+        retriever = self.vector_store.as_retriever(kwargs={"k":5})
+        history_aware_retriever = create_history_aware_retriever(
+            self.llm, retriever, contextualize_q_prompt
+        )
+
+        # Define the prompt to answer the question
+        qa_system_prompt = (
+            "You are an assistant for question-answering tasks. Use "
+            "the following pieces of retrieved context to answer the "
+            "question. If you don't know the answer, just say that you "
+            "don't know."
+            "\n\n"
+            "{context}"
+        )
+        qa_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", qa_system_prompt),
+                MessagesPlaceholder("chat_history"),
+                ("human", "{input}"),
+            ]
+        )
+
+        # Create the question-answering chain
+        question_answer_chain = create_stuff_documents_chain(self.llm, qa_prompt)
+
+        # Create the retrieval chain
+        rag_chain = create_retrieval_chain(
+            history_aware_retriever, question_answer_chain
+        )
+
+        return rag_chain
+            
+    def get_response(self, query: str) -> Dict:
+        response = self.chain.invoke({"input": query, "chat_history": self.chat_history})
+        self.chat_history.extend([HumanMessage(content=query), AIMessage(content=response["answer"])])
         return {
             "answer": response["answer"],
-            "source_documents": response["source_documents"]
+            "source_documents": []
         }
     
 if __name__ == "__main__":
     chatbot = Chatbot(collection_name="nice_guidelines")
     print("chatbot ready...")
-    question = "what is the first-line treatment for pregnant women with hypertension?"
-    res = chatbot.get_response(question=question)
+    question = "what is hypertension?"
+    res = chatbot.get_response(query=question)
+    print(res["answer"])
+    print(res["source_documents"])
+
+    question = "what is first line treatment for pregnant women?"
+    res = chatbot.get_response(query=question)
     print(res["answer"])
     print(res["source_documents"])
     print("chatbot test ok!")
