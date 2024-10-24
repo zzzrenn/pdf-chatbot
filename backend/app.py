@@ -76,8 +76,8 @@ async def upload_document(file: UploadFile = File(...)):
         print("Done computing embeddings...")
 
         # Move documents from upload dir to document dir
-        for filename in os.listdir(DOCUMENT_DIR):
-            file_path = os.path.join(DOCUMENT_DIR, filename)
+        for filename in os.listdir(UPLOAD_DIR):
+            file_path = os.path.join(UPLOAD_DIR, filename)
             shutil.move(file_path, DOCUMENT_DIR)
         shutil.rmtree(UPLOAD_DIR)
         print("Moved to document dir")
