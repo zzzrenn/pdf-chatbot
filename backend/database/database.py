@@ -1,7 +1,8 @@
 from pymilvus import connections, db, DataType, Collection, utility, FieldSchema, CollectionSchema
+from typing import List
 
 class VectorStore:
-    def __init__(self, db_name="guideline_chatbot", collection_name="test"):
+    def __init__(self, db_name: str="guideline_chatbot", collection_name: str="test"):
         conn = connections.connect(host="127.0.0.1", port=19530)
         self.db_name = db_name
         if db_name not in db.list_database():
@@ -10,7 +11,7 @@ class VectorStore:
         db.using_database(db_name)
         self.collection = self.create_collection(collection_name)
 
-    def create_collection(self, collection_name: str="embeddings", dim: int=1536):
+    def create_collection(self, collection_name: str="embeddings", dim: int=1536) -> Collection:
         if not utility.has_collection(collection_name):
             # Field schema
             id = FieldSchema(
@@ -66,10 +67,13 @@ class VectorStore:
             collection.load()
         return collection
     
-    def insert_data(self, data):
+    def insert_data(self, data: dict):
+        if len(data) == 0:
+            Warning("Data to be inserted is empty!")
+            return
         return self.collection.insert(data)
     
-    def query(self, query, output_fields):
+    def query(self, query: str, output_fields: List[str]):
         self.collection.load()
         res = self.collection.query(
             expr = query, 
@@ -85,7 +89,7 @@ if __name__ == "__main__":
     page = [100]
     data = [{"vector": v, "text": t, "source": s, "page": p} for v,t,s,p in zip(vector, text, source, page)]
 
-    db = VectorStore(db_name="HI", collection_name="test")
+    db = VectorStore(db_name="chatbot", collection_name="test")
     res = db.insert_data(data)
     print(res)
     print("added data...")

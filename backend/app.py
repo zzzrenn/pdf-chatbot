@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from chatbot import Chatbot
-from document_processor import DocumentProcessor
+from document_processor import get_document_processor
 import os
 from typing import Dict, List
 import shutil
@@ -17,12 +17,13 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 DOCUMENT_DIR = os.getenv("DOCUMENT_DIR")
 DB_NAME = os.getenv("DB_NAME")
 UPLOAD_DIR = os.getenv("UPLOAD_DIR")
+DOCUMENT_PROCESSOR_TYPE = os.getenv("DOCUMENT_PROCESSOR_TYPE")
 
 # Initialize chatbot
 chatbot = Chatbot(COLLECTION_NAME)
 
 # Initialize document processor
-doc_processor = DocumentProcessor(db_name=DB_NAME, collection_name=COLLECTION_NAME)
+doc_processor = get_document_processor(db_name=DB_NAME, collection_name=COLLECTION_NAME)
 
 class Question(BaseModel):
     question: str
