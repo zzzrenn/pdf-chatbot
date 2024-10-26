@@ -82,6 +82,9 @@ async def upload_document(file: UploadFile = File(...)):
             shutil.move(file_path, DOCUMENT_DIR)
         shutil.rmtree(UPLOAD_DIR)
         print("Moved to document dir")
+
+        # update BM25 retriever
+        chatbot._create_chain()
         
         return {"message": "Document uploaded and processed successfully"}
     except Exception as e:

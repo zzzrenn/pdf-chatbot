@@ -30,7 +30,6 @@ class Chatbot:
         )
         self.doc_processor = get_document_processor(processor_type=doc_processor_type, db_name=db_name, collection_name=collection_name)
         self.chat_history = []
-        self.chain = self._create_chain()
     
     def _create_chain(self):
         # Define the prompt to contextualize the question
@@ -52,15 +51,19 @@ class Chatbot:
 
         # BM25
         chunks = self.doc_processor.load_and_split_documents(DOCUMENT_DIR)
-        bm25_retriever = BM25Retriever.from_documents(chunks, kwargs={"k":5})
+        if len(chunks) == 0:
+            Warning("No documents in database...")
+            retriever = semantic_retriever
+        else:
+            bm25_retriever = BM25Retriever.from_documents(chunks, kwargs={"k":5})
 
-        # initialize the ensemble retriever with 3 Retrievers
-        ensemble_retriever = EnsembleRetriever(
-            retrievers=[semantic_retriever, bm25_retriever], weights=[0.8, 0.2]
-        )
+            # initialize the ensemble retriever with 3 Retrievers
+            retriever = EnsembleRetriever(
+                retrievers=[semantic_retriever, bm25_retriever], weights=[0.8, 0.2]
+            )
 
         history_aware_retriever = create_history_aware_retriever(
-            self.llm, ensemble_retriever, contextualize_q_prompt
+            self.llm, retriever, contextualize_q_prompt
         )
 
         # Define the prompt to answer the question
@@ -84,11 +87,9 @@ class Chatbot:
         question_answer_chain = create_stuff_documents_chain(self.llm, qa_prompt)
 
         # Create the retrieval chain
-        rag_chain = create_retrieval_chain(
+        self.chain = create_retrieval_chain(
             history_aware_retriever, question_answer_chain
         )
-
-        return rag_chain
             
     def get_response(self, query: str) -> Dict:
         response = self.chain.invoke({"input": query, "chat_history": self.chat_history})
