@@ -20,10 +20,10 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR")
 DOCUMENT_PROCESSOR_TYPE = os.getenv("DOCUMENT_PROCESSOR_TYPE")
 
 # Initialize chatbot
-chatbot = Chatbot(COLLECTION_NAME)
+chatbot = Chatbot(DB_NAME, COLLECTION_NAME, doc_processor_type=DOCUMENT_PROCESSOR_TYPE)
 
 # Initialize document processor
-doc_processor = get_document_processor(db_name=DB_NAME, collection_name=COLLECTION_NAME)
+doc_processor = get_document_processor(processor_type=DOCUMENT_PROCESSOR_TYPE, db_name=DB_NAME, collection_name=COLLECTION_NAME)
 
 class Question(BaseModel):
     question: str

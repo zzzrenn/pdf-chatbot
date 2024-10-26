@@ -5,10 +5,18 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_milvus import Milvus
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
 from typing import Dict
+from document_processor import get_document_processor
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+DOCUMENT_DIR = os.getenv("DOCUMENT_DIR")
 
 class Chatbot:
-    def __init__(self, collection_name: str, vector_store_uri: str="http://127.0.0.1:19530"):
+    def __init__(self, db_name: str, collection_name: str, vector_store_uri: str="http://127.0.0.1:19530", doc_processor_type: str="naive"):
         self.collection_name = collection_name
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini"
@@ -18,8 +26,9 @@ class Chatbot:
             collection_name=collection_name,
             vector_field="vector",
             text_field="text",
-            connection_args={"uri": vector_store_uri},
+            connection_args={"uri": vector_store_uri, "db_name": db_name},
         )
+        self.doc_processor = get_document_processor(processor_type=doc_processor_type, db_name=db_name, collection_name=collection_name)
         self.chat_history = []
         self.chain = self._create_chain()
     
@@ -39,9 +48,19 @@ class Chatbot:
                 ("human", "{input}"),
             ]
         )
-        retriever = self.vector_store.as_retriever(kwargs={"k":5})
+        semantic_retriever = self.vector_store.as_retriever(kwargs={"k":5})
+
+        # BM25
+        chunks = self.doc_processor.load_and_split_documents(DOCUMENT_DIR)
+        bm25_retriever = BM25Retriever.from_documents(chunks, kwargs={"k":5})
+
+        # initialize the ensemble retriever with 3 Retrievers
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[semantic_retriever, bm25_retriever], weights=[0.8, 0.2]
+        )
+
         history_aware_retriever = create_history_aware_retriever(
-            self.llm, retriever, contextualize_q_prompt
+            self.llm, ensemble_retriever, contextualize_q_prompt
         )
 
         # Define the prompt to answer the question
@@ -73,14 +92,18 @@ class Chatbot:
             
     def get_response(self, query: str) -> Dict:
         response = self.chain.invoke({"input": query, "chat_history": self.chat_history})
+        sources = set()
+        for context in response["context"]:
+            metadata = context.metadata
+            sources.add((metadata["source"], "page: " + str(metadata["page"])))
         self.chat_history.extend([HumanMessage(content=query), AIMessage(content=response["answer"])])
         return {
             "answer": response["answer"],
-            "source_documents": []
+            "source_documents": list(sources)
         }
     
 if __name__ == "__main__":
-    chatbot = Chatbot(collection_name="nice_guidelines")
+    chatbot = Chatbot(db_name="chatbot", collection_name="nice_guidelines")
     print("chatbot ready...")
     question = "what is hypertension?"
     res = chatbot.get_response(query=question)
