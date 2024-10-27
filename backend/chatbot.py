@@ -1,4 +1,3 @@
-# backend/chatbot.py
 from langchain_openai  import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder

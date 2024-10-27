@@ -11,3 +11,9 @@ volumes/
 # documents
 documents/
 test_documents/
+
+# logs
+logs/
+
+# debug configuration
+.vscode/
