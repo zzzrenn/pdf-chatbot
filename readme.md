@@ -1,3 +1,4 @@
 ### TODO
+- [x] reranking
 - [ ] clickable document sources
-- [ ] reranking
+- [ ] remove sources under certain threshold

@@ -7,6 +7,8 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_milvus import Milvus
 from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_cohere import CohereRerank
 from typing import Dict
 from document_processor import get_document_processor
 from dotenv import load_dotenv
@@ -16,10 +18,11 @@ load_dotenv()
 DOCUMENT_DIR = os.getenv("DOCUMENT_DIR")
 
 class Chatbot:
-    def __init__(self, db_name: str, collection_name: str, vector_store_uri: str="http://127.0.0.1:19530", doc_processor_type: str="naive"):
+    def __init__(self, db_name: str, collection_name: str, vector_store_uri: str="http://127.0.0.1:19530", doc_processor_type: str="naive", bm25=True, rerank=True):
         self.collection_name = collection_name
         self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini"
+            model_name="gpt-4o-mini",
+            temperature=0
         )
         self.vector_store = Milvus(
             embedding_function=OpenAIEmbeddings(model="text-embedding-3-small"),
@@ -29,7 +32,10 @@ class Chatbot:
             connection_args={"uri": vector_store_uri, "db_name": db_name},
         )
         self.doc_processor = get_document_processor(processor_type=doc_processor_type, db_name=db_name, collection_name=collection_name)
+        self.bm25 = bm25
+        self.reranker = CohereRerank(model="rerank-english-v3.0", top_n=3) if rerank else None
         self.chat_history = []
+        self._create_chain()
     
     def _create_chain(self):
         # Define the prompt to contextualize the question
@@ -49,29 +55,36 @@ class Chatbot:
         )
         semantic_retriever = self.vector_store.as_retriever(kwargs={"k":5})
 
-        # BM25
-        chunks = self.doc_processor.load_and_split_documents(DOCUMENT_DIR)
-        if len(chunks) == 0:
-            Warning("No documents in database...")
-            retriever = semantic_retriever
-        else:
-            bm25_retriever = BM25Retriever.from_documents(chunks, kwargs={"k":5})
+        if self.bm25:
+            # BM25
+            chunks = self.doc_processor.load_and_split_documents(DOCUMENT_DIR)
+            if len(chunks) == 0:
+                Warning("No documents in database...")
+                retriever = semantic_retriever
+            else:
+                bm25_retriever = BM25Retriever.from_documents(chunks, kwargs={"k":5})
 
-            # initialize the ensemble retriever with 3 Retrievers
-            retriever = EnsembleRetriever(
-                retrievers=[semantic_retriever, bm25_retriever], weights=[0.8, 0.2]
+                # initialize the ensemble retriever with 3 Retrievers
+                retriever = EnsembleRetriever(
+                    retrievers=[semantic_retriever, bm25_retriever], weights=[0.8, 0.2]
+                )
+        
+        if self.reranker:
+            # reranking
+            compression_retriever = ContextualCompressionRetriever(
+                base_compressor=self.reranker, base_retriever=retriever
             )
 
         history_aware_retriever = create_history_aware_retriever(
-            self.llm, retriever, contextualize_q_prompt
+            self.llm, compression_retriever, contextualize_q_prompt
         )
 
         # Define the prompt to answer the question
         qa_system_prompt = (
             "You are an assistant for question-answering tasks. Use "
-            "the following pieces of retrieved context to answer the "
-            "question. If you don't know the answer, just say that you "
-            "don't know."
+            "the following pieces of retrieved context to answer the question. "
+            "If you are unsure about the question, ask the user for clarification."
+            "If you don't know the answer, say you don't know."
             "\n\n"
             "{context}"
         )
