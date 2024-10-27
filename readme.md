@@ -2,3 +2,4 @@
 - [x] reranking
 - [ ] clickable document sources
 - [ ] remove sources under certain threshold
+- [ ] add log
