@@ -22,13 +22,13 @@ DOCUMENT_DIR = os.getenv("DOCUMENT_DIR")
 DB_NAME = os.getenv("DB_NAME")
 UPLOAD_DIR = os.getenv("UPLOAD_DIR")
 DOCUMENT_PROCESSOR_TYPE = os.getenv("DOCUMENT_PROCESSOR_TYPE")
-BM25 = os.getenv("BM25")
-RERANK = os.getenv("RERANK")
+BM25 = os.getenv("BM25").lower() == "true"
+RERANK = os.getenv("RERANK").lower() == "true"
 
 # Initialize chatbot
 logger.debug(f"Initializing chatbot with db_name={DB_NAME}, collection_name={COLLECTION_NAME}, doc_processor_type={DOCUMENT_PROCESSOR_TYPE}, bm25={BM25}, rerank={RERANK}")
 try:
-    chatbot = Chatbot(DB_NAME, COLLECTION_NAME, doc_processor_type=DOCUMENT_PROCESSOR_TYPE, bm25=True, rerank=True)
+    chatbot = Chatbot(DB_NAME, COLLECTION_NAME, doc_processor_type=DOCUMENT_PROCESSOR_TYPE, bm25=BM25, rerank=RERANK)
     logger.info("Chatbot initialized succesfully")
 except Exception as e:
     logger.critical(f"Failed to initialize chatbot: {str(e)}")
