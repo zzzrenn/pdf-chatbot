@@ -79,6 +79,8 @@ class Chatbot:
                     retrievers=[semantic_retriever, bm25_retriever],
                     weights=[0.8, 0.2],
                 )
+        else:
+            retriever = semantic_retriever
 
         if self.reranker:
             # reranking
