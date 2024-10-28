@@ -1,5 +1,5 @@
 # virtual env
-.venv/ 
+.venv/
 **/*.pyc
 
 # database volume

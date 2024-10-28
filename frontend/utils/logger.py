@@ -1,11 +1,13 @@
 import logging
 import os
+import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-import sys
+
 
 class CustomFormatter(logging.Formatter):
     """Custom formatter with colors for console output"""
+
     grey = "\x1b[38;21m"
     blue = "\x1b[38;5;39m"
     yellow = "\x1b[38;5;226m"
@@ -21,13 +23,14 @@ class CustomFormatter(logging.Formatter):
             logging.INFO: self.blue + self.fmt + self.reset,
             logging.WARNING: self.yellow + self.fmt + self.reset,
             logging.ERROR: self.red + self.fmt + self.reset,
-            logging.CRITICAL: self.bold_red + self.fmt + self.reset
+            logging.CRITICAL: self.bold_red + self.fmt + self.reset,
         }
 
     def format(self, record):
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
+
 
 def setup_logger(name: str, log_dir: str = "logs"):
     """Set up logger with both file and console handlers"""
@@ -41,19 +44,13 @@ def setup_logger(name: str, log_dir: str = "logs"):
 
     # Create formatters
     file_formatter = logging.Formatter(
-        '%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s'
+        "%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s"
     )
-    console_formatter = CustomFormatter(
-        '%(asctime)s | %(name)s | %(levelname)s | %(message)s'
-    )
+    console_formatter = CustomFormatter("%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 
     # Create file handler
     log_file = os.path.join(log_dir, f"{name}_{datetime.now().strftime('%Y%m%d')}.log")
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=10485760,  # 10MB
-        backupCount=5
-    )
+    file_handler = RotatingFileHandler(log_file, maxBytes=10485760, backupCount=5)  # 10MB
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
 

@@ -1,8 +1,9 @@
-import requests
 import os
+
+import requests
 from bs4 import BeautifulSoup
 
-base_url = 'https://www.nice.org.uk'
+base_url = "https://www.nice.org.uk"
 
 
 save_dir = "documents"
@@ -15,24 +16,24 @@ DOWNLOAD_LIMIT = 5
 count = 0
 page = 1
 while True:
-    url=requests.get(base_url + f'/search?q={QUERY}&ndt=Guidance&gst=Published&pa={page}')
+    url = requests.get(base_url + f"/search?q={QUERY}&ndt=Guidance&gst=Published&pa={page}")
     print("Scrapping page ", page, "...")
-    soup = BeautifulSoup(url.content,"lxml")
+    soup = BeautifulSoup(url.content, "lxml")
     start_count = count
-    for a in soup.find_all('a', href=True):
-        mystr = a['href']
+    for a in soup.find_all("a", href=True):
+        mystr = a["href"]
         # print(mystr)
         if mystr.startswith("/guidance"):
             tag = mystr.split("/")[2].lower()
             if tag in visited:
                 continue
-            
+
             visited.add(tag)
             url_child = requests.get(base_url + mystr)
-            soup_child = BeautifulSoup(url_child.content,"lxml")
+            soup_child = BeautifulSoup(url_child.content, "lxml")
             found_pdf = False
-            for a_child in soup_child.find_all('a', href=True):
-                mystr_child = a_child['href']
+            for a_child in soup_child.find_all("a", href=True):
+                mystr_child = a_child["href"]
                 if "pdf" in mystr_child:
                     if mystr_child.startswith("https"):
                         url_pdf = requests.get(mystr_child)

@@ -1,1 +1,1 @@
-from .database import VectorStore
+from database import VectorStore

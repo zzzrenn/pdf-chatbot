@@ -1,9 +1,19 @@
-from pymilvus import connections, db, DataType, Collection, utility, FieldSchema, CollectionSchema
 from typing import List
 
+from pymilvus import (
+    Collection,
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    connections,
+    db,
+    utility,
+)
+
+
 class VectorStore:
-    def __init__(self, db_name: str="guideline_chatbot", collection_name: str="test"):
-        conn = connections.connect(host="127.0.0.1", port=19530)
+    def __init__(self, db_name: str = "guideline_chatbot", collection_name: str = "test"):
+        self.conn = connections.connect(host="127.0.0.1", port=19530)
         self.db_name = db_name
         if db_name not in db.list_database():
             print("created database")
@@ -11,90 +21,69 @@ class VectorStore:
         db.using_database(db_name)
         self.collection = self.create_collection(collection_name)
 
-    def create_collection(self, collection_name: str="embeddings", dim: int=1536) -> Collection:
+    def create_collection(self, collection_name: str = "embeddings", dim: int = 1536) -> Collection:
         if not utility.has_collection(collection_name):
             # Field schema
-            id = FieldSchema(
-                name="id",
-                dtype=DataType.INT64,
-                is_primary=True,
-                auto_id=True
-            )
+            id = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True)
             vector = FieldSchema(
                 name="vector",
                 dtype=DataType.FLOAT_VECTOR,
-                dim=dim, # default openAI embeddings dim 1536
+                dim=dim,  # default openAI embeddings dim 1536
             )
-            text = FieldSchema(
-                name="text",
-                dtype=DataType.VARCHAR,
-                max_length=50000
-            )
-            source = FieldSchema(
-                name="source",
-                dtype=DataType.VARCHAR,
-                max_length=1000
-            )
-            page = FieldSchema(
-                name="page",
-                dtype=DataType.INT32
-            )
+            text = FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=50000)
+            source = FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=1000)
+            page = FieldSchema(name="page", dtype=DataType.INT32)
 
             # Collection schema
             schema = CollectionSchema(
-                fields=[id, vector, text, source, page], 
-                description="NICE guidelines' embeddings"
+                fields=[id, vector, text, source, page],
+                description="NICE guidelines embeddings",
             )
 
             # create collection
-            collection = Collection(
-                name=collection_name, 
-                schema=schema, 
-                using='default'
-            )
+            collection = Collection(name=collection_name, schema=schema, using="default")
 
             # create index
             index_params = {
-                "metric_type":"IP",
-                "index_type":"FLAT",
+                "metric_type": "IP",
+                "index_type": "FLAT",
             }
-            collection.create_index(
-                field_name="vector", 
-                index_params=index_params
-            )
+            collection.create_index(field_name="vector", index_params=index_params)
         else:
             collection = Collection(collection_name)
             collection.load()
         return collection
-    
+
     def insert_data(self, data: dict):
         if len(data) == 0:
             Warning("Data to be inserted is empty!")
             return
         return self.collection.insert(data)
-    
+
     def query(self, query: str, output_fields: List[str]):
         self.collection.load()
-        res = self.collection.query(
-            expr = query, 
-            output_fields = output_fields
-        )
+        res = self.collection.query(expr=query, output_fields=output_fields)
         return res
+
+
 if __name__ == "__main__":
     import random
-    
+
     vector = [[random.uniform(-1, 1) for _ in range(1536)]]
     text = ["test text"]
     source = ["dummy"]
     page = [100]
-    data = [{"vector": v, "text": t, "source": s, "page": p} for v,t,s,p in zip(vector, text, source, page)]
+    data = [
+        {"vector": v, "text": t, "source": s, "page": p}
+        for v, t, s, p in zip(vector, text, source, page)
+    ]
 
-    db = VectorStore(db_name="chatbot", collection_name="test")
-    res = db.insert_data(data)
+    vs = VectorStore(db_name="chatbot", collection_name="test")
+    res = vs.insert_data(data)
     print(res)
     print("added data...")
 
     # try retrieve data
-    res = db.query('source == "dummy"', ["id", "text", "source", "page"])
+    res = db.query("source == 'dummy'", ["id", "text", "source", "page"])
     print(res)
     print("test ok")
