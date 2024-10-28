@@ -1,5 +1,9 @@
 ### TODO
-- [x] reranking
-- [ ] clickable document sources
-- [ ] remove sources under certain threshold
-- [ ] add log
+- [x] Hybrid search with BM25
+- [x] Reranking with Cohere rerank
+- [x] Add logging
+- [x] Add precommit
+- [ ] Add requirements.txt
+- [ ] Parse PDF with llama parse
+- [ ] Add clickable document sources
+- [ ] Remove sources under certain threshold
