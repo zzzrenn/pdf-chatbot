@@ -15,7 +15,7 @@ BACKEND_URL = os.getenv("BACKEND_URL")
 logger = setup_logger("frontend")
 
 
-def init_session_state():
+def init_session_state(doc_manager):
     """Initialize session state variables"""
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -23,6 +23,7 @@ def init_session_state():
         st.session_state.selected_document = None
     if "documents" not in st.session_state:
         st.session_state.documents = []
+    st.session_state.documents = doc_manager.get_documents()
 
 
 class DocumentManager:
@@ -43,6 +44,8 @@ class DocumentManager:
                 logger.error(
                     f"Failed to upload document: {file.name}, Status: {response.status_code}"
                 )
+            # Update document list
+            st.session_state.documents = self.get_documents()
             return success
         except Exception as e:
             logger.error(f"Error uploading document: {str(e)}")
@@ -122,13 +125,11 @@ def display_pdf(pdf_content: bytes):
 
 def main():
     logger.info("Starting Streamlit application")
-    st.set_page_config(layout="wide", page_title="Document Q&A System")
-    logger.debug("Initializing session state")
-    init_session_state()
-
-    # Initialize managers
     doc_manager = DocumentManager(api_url=BACKEND_URL)
     chat_interface = ChatInterface(api_url=BACKEND_URL)
+    st.set_page_config(layout="wide", page_title="Document Q&A System")
+    logger.debug("Initializing session state")
+    init_session_state(doc_manager)
 
     # Create main layout
     with st.sidebar:
@@ -165,11 +166,9 @@ def main():
             with col3:
                 st.write("📋")
 
-    # Main content area with tabs
-    tab1, tab2 = st.tabs(["Chat", "Document Viewer"])
-
-    # Chat tab
-    with tab1:
+    # Main content area
+    col1, col2 = st.columns([6, 4])
+    with col1:
         st.title("Document Q&A Chat")
 
         # Display chat messages
@@ -203,7 +202,7 @@ def main():
             st.rerun()
 
     # Document viewer tab
-    with tab2:
+    with col2:
         st.title("Document Viewer")
         if st.session_state.selected_document:
             doc = st.session_state.selected_document
