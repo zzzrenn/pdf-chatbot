@@ -1,5 +1,4 @@
 import os
-import shutil
 import traceback
 from typing import Dict, List
 
@@ -130,27 +129,11 @@ async def get_document(filename: str):
 @app.post("/upload")
 async def upload_document(file: UploadFile):
     logger.info(f"Received upload request for file: {file.filename}")
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     try:
-        # Save file
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        logger.debug(f"Saving file to: {file_path}")
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info(f"File saved successfully: {file.filename}")
-
         # Process and store embeddings
         logger.debug("Processing document and computing embeddings")
         doc_processor.compute_and_store_embeddings(UPLOAD_DIR)
         logger.info("Document processed and embeddings stored successfully")
-
-        # Move documents from upload dir to document dir
-        logger.debug("Moving processed document to document storage directory")
-        for filename in os.listdir(UPLOAD_DIR):
-            file_path = os.path.join(UPLOAD_DIR, filename)
-            shutil.move(file_path, DOCUMENT_DIR)
-        shutil.rmtree(UPLOAD_DIR)
-        logger.info("Document moved to storage directory succesfully")
 
         # update BM25 retriever
         chatbot._create_chain()

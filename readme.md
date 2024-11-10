@@ -5,5 +5,6 @@
 - [x] Add precommit
 - [ ] Add requirements.txt
 - [ ] Parse PDF with llama parse
-- [ ] Add clickable document sources
+- [x] Add clickable document sources
 - [ ] Remove sources under certain threshold
+- [ ] Improve frontend UI

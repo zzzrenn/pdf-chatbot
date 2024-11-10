@@ -1,29 +1,23 @@
 import base64
 import os
+import shutil
 from typing import Dict, List
 
+import dash
+import dash_bootstrap_components as dbc
 import requests
-import streamlit as st
+from dash import Input, Output, State, callback, ctx, dcc, html
 from dotenv import load_dotenv
 from utils.logger import setup_logger
 
 # Environment variables
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL")
+DOCUMENT_DIR = os.getenv("DOCUMENT_DIR")
+UPLOAD_DIR = os.getenv("UPLOAD_DIR")
 
 # Setup logger
 logger = setup_logger("frontend")
-
-
-def init_session_state(doc_manager):
-    """Initialize session state variables"""
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "selected_document" not in st.session_state:
-        st.session_state.selected_document = None
-    if "documents" not in st.session_state:
-        st.session_state.documents = []
-    st.session_state.documents = doc_manager.get_documents()
 
 
 class DocumentManager:
@@ -44,12 +38,9 @@ class DocumentManager:
                 logger.error(
                     f"Failed to upload document: {file.name}, Status: {response.status_code}"
                 )
-            # Update document list
-            st.session_state.documents = self.get_documents()
             return success
         except Exception as e:
             logger.error(f"Error uploading document: {str(e)}")
-            st.error(f"Error uploading document: {str(e)}")
             return False
 
     def get_documents(self) -> List[Dict]:
@@ -61,7 +52,6 @@ class DocumentManager:
             logger.info(f"Successfully fetched {len(documents)} documents")
             return documents
         logger.warning(f"Failed to fetch documents, Status: {response.status_code}")
-        st.error(f"Error fetching documents: ERROR {response.status_code}")
         return []
 
     def get_document_content(self, filename: str) -> bytes:
@@ -70,13 +60,12 @@ class DocumentManager:
         try:
             response = requests.get(f"{self.api_url}/document/{filename}")
             if response.status_code == 200:
-                logger.debug(f"Successfully fetched content for: {filename}")
+                logger.info(f"Successfully fetched content for: {filename}")
                 return response.content
             logger.warning(f"Failed to fetch document content, Status: {response.status_code}")
             return None
         except Exception as e:
             logger.error(f"Error fetching document content: {str(e)}")
-            st.error(f"Error fetching document content: {str(e)}")
             return None
 
 
@@ -91,7 +80,7 @@ class ChatInterface:
         try:
             response = requests.post(f"{self.api_url}/chat", json={"question": question})
             if response.status_code == 200:
-                logger.debug("Successfully received chat response")
+                logger.info("Successfully received chat response")
                 return response.json()
             logger.warning(f"Failed to get chat response, Status: {response.status_code}")
             return {
@@ -100,122 +89,326 @@ class ChatInterface:
             }
         except Exception as e:
             logger.error(f"Error getting chat response: {str(e)}")
-            st.error(f"Error getting response: {str(e)}")
             return {
                 "answer": "Error: Could not get response",
                 "source_documents": [],
             }
 
 
-def display_pdf(pdf_content: bytes):
-    """Display PDF content in the Streamlit app"""
-    logger.debug("Displaying PDF content")
-    base64_pdf = base64.b64encode(pdf_content).decode("utf-8")
-    pdf_display = f"""
-        <iframe
-            src='data:application/pdf;base64,{base64_pdf}'
-            width='100%'
-            height='800px'
-            style='border: none;'>
-        </iframe>
-    """
-    st.markdown(pdf_display, unsafe_allow_html=True)
-    logger.info("Successfully displayed PDF content")
+# Initialize Dash app with dark theme
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
+doc_manager = DocumentManager(api_url=BACKEND_URL)
+chat_interface = ChatInterface(api_url=BACKEND_URL)
+
+# Layout
+app.layout = dbc.Container(
+    [
+        # Store components for managing state
+        dcc.Store(id="current-pdf-content"),
+        dcc.Store(id="active-tab", data="chat"),
+        dbc.Row(
+            [
+                # Sidebar
+                dbc.Col(
+                    [
+                        html.H3("Document Management", className="mb-4"),
+                        dcc.Upload(
+                            id="upload-document",
+                            children=html.Div(["Drag and Drop or ", html.A("Select PDF File")]),
+                            style={
+                                "width": "100%",
+                                "height": "60px",
+                                "lineHeight": "60px",
+                                "borderWidth": "1px",
+                                "borderStyle": "dashed",
+                                "borderRadius": "5px",
+                                "textAlign": "center",
+                                "margin": "10px 0",
+                            },
+                            multiple=False,
+                            accept="application/pdf",
+                        ),
+                        dbc.Spinner(
+                            html.Div(id="upload-status"), color="primary", type="border", size="sm"
+                        ),
+                        html.H4("Document List", className="mt-4 mb-3"),
+                        dbc.Button(
+                            [html.I(className="fas fa-sync-alt me-2"), "Refresh List"],
+                            id="refresh-button",
+                            color="primary",
+                            className="mb-3",
+                        ),
+                        html.Div(
+                            id="document-list",
+                            style={"maxHeight": "calc(100vh - 300px)", "overflowY": "auto"},
+                        ),
+                    ],
+                    width=3,
+                    className="bg-dark p-4",
+                    style={"height": "100vh"},
+                ),
+                # Main content
+                dbc.Col(
+                    [
+                        dcc.Tabs(
+                            [
+                                # Chat Interface Tab
+                                dcc.Tab(
+                                    label="Chat Interface",
+                                    value="chat",
+                                    children=[
+                                        html.Div(
+                                            [
+                                                html.Div(
+                                                    id="chat-messages",
+                                                    style={
+                                                        "height": "calc(100vh - 200px)",
+                                                        "overflowY": "auto",
+                                                        "padding": "20px",
+                                                    },
+                                                ),
+                                                dbc.InputGroup(
+                                                    [
+                                                        dbc.Input(
+                                                            id="chat-input",
+                                                            type="text",
+                                                            placeholder="Ask a question...",
+                                                            style={
+                                                                "backgroundColor": "#2c3e50",
+                                                                "color": "white",
+                                                            },
+                                                        ),
+                                                        dbc.Button(
+                                                            "Send",
+                                                            id="send-button",
+                                                            color="primary",
+                                                        ),
+                                                    ],
+                                                    className="mt-3",
+                                                ),
+                                            ]
+                                        )
+                                    ],
+                                    style={"backgroundColor": "#1a1a1a"},
+                                    selected_style={"backgroundColor": "#2c3e50"},
+                                ),
+                                # PDF Viewer Tab
+                                dcc.Tab(
+                                    label="PDF Viewer",
+                                    value="pdf",
+                                    children=[
+                                        dbc.Spinner(
+                                            html.Div(
+                                                id="pdf-viewer",
+                                                style={"height": "calc(100vh - 150px)"},
+                                            ),
+                                            color="primary",
+                                            type="border",
+                                        )
+                                    ],
+                                    style={"backgroundColor": "#1a1a1a"},
+                                    selected_style={"backgroundColor": "#2c3e50"},
+                                ),
+                            ],
+                            id="tabs",
+                            value="chat",
+                        )
+                    ],
+                    width=9,
+                    style={"height": "100vh", "paddingLeft": 0},
+                ),
+            ],
+            className="g-0",
+        ),  # Remove gutters for better spacing
+    ],
+    fluid=True,
+    style={"backgroundColor": "#1a1a1a", "minHeight": "100vh", "padding": 0},
+)
 
 
-def main():
-    logger.info("Starting Streamlit application")
-    doc_manager = DocumentManager(api_url=BACKEND_URL)
-    chat_interface = ChatInterface(api_url=BACKEND_URL)
-    st.set_page_config(layout="wide", page_title="Document Q&A System")
-    logger.debug("Initializing session state")
-    init_session_state(doc_manager)
+# Callbacks
+@callback(
+    Output("document-list", "children"),
+    [Input("refresh-button", "n_clicks")],
+    prevent_initial_call=False,
+)
+def update_document_list(_):
+    documents = doc_manager.get_documents()
+    return dbc.Table(
+        [
+            html.Thead([html.Tr([html.Th("Document Name", style={"width": "100%"})])]),
+            html.Tbody(
+                [
+                    html.Tr(
+                        [
+                            html.Td(
+                                html.A(
+                                    doc["filename"],
+                                    id={"type": "doc-link", "index": doc["filename"]},
+                                    className="text-light text-decoration-none",
+                                    style={
+                                        "cursor": "pointer",
+                                        "whiteSpace": "nowrap",
+                                        "overflow": "hidden",
+                                        "textOverflow": "ellipsis",
+                                        "display": "block",
+                                    },
+                                )
+                            )
+                        ]
+                    )
+                    for doc in documents
+                ]
+            ),
+        ],
+        bordered=True,
+        dark=True,
+        hover=True,
+        responsive=True,
+        size="sm",
+    )
 
-    # Create main layout
-    with st.sidebar:
-        st.title("Document Management")
 
-        # Upload section
-        st.subheader("Upload Document")
-        uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
-        if uploaded_file:
-            logger.info(f"File selected for upload: {uploaded_file.name}")
-            if st.button("Process Document"):
-                with st.spinner("Uploading and processing document..."):
-                    if doc_manager.upload_document(uploaded_file):
-                        logger.info("Document processed successfully")
-                        st.success("Document uploaded and processed successfully!")
-                        # Refresh document list
-                        st.session_state.documents = doc_manager.get_documents()
+@callback(
+    [Output("pdf-viewer", "children"), Output("tabs", "value")],
+    [
+        Input({"type": "doc-link", "index": dash.ALL}, "n_clicks"),
+        Input({"type": "source-link", "index": dash.ALL}, "n_clicks"),
+    ],
+    # [State({"type": "doc-link", "index": dash.ALL}, "id"),
+    #  State({"type": "source-link", "index": dash.ALL}, "id")],
+    prevent_initial_call=True,
+)
+def update_pdf_viewer(doc_clicks, source_clicks):
+    if not ctx.triggered_id or not ctx.triggered[0]["value"]:
+        return "Select a document to view", "chat"
 
-        # Document list section
-        st.subheader("Available Documents")
-        # Refresh button
-        if st.button("🔄 Refresh List"):
-            st.session_state.documents = doc_manager.get_documents()
+    triggered = ctx.triggered_id
+    filename = None
+    page = None
 
-        # Display documents
-        for doc in st.session_state.documents:
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                doc_name = doc["filename"]
-                if st.button(f"📄 {doc_name}", key=f"btn_{doc_name}"):
-                    st.session_state.selected_document = doc
-            with col2:
-                st.write(f"{doc['size'] // 1024}KB")
-            with col3:
-                st.write("📋")
+    if triggered.get("type") == "doc-link":
+        filename = triggered.get("index")
+    elif triggered.get("type") == "source-link":
+        # Parse source string (format: "filename:page")
+        source_str = triggered.get("index")
+        if ":" in source_str:
+            filename, page = source_str.split(":")
 
-    # Main content area
-    col1, col2 = st.columns([6, 4])
-    with col1:
-        st.title("Document Q&A Chat")
-
-        # Display chat messages
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-                if message["role"] == "assistant" and "source_documents" in message:
-                    with st.expander("View Sources"):
-                        for source in message["source_documents"]:
-                            st.markdown(f"- {source}")
-
-        # Chat input
-        if question := st.chat_input("Ask a question about your documents"):
-            # Add user message
-            st.session_state.messages.append({"role": "user", "content": question})
-
-            # Get and display response
-            with st.spinner("Thinking..."):
-                response = chat_interface.get_response(question)
-
-            # Add assistant message
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": response["answer"],
-                    "source_documents": response.get("source_documents", []),
-                }
+    if filename:
+        pdf_content = doc_manager.get_document_content(filename)
+        if pdf_content:
+            base64_pdf = base64.b64encode(pdf_content).decode("utf-8")
+            viewer = html.Iframe(
+                src=f"data:application/pdf;base64,{base64_pdf}#page={page if page else 0}",
+                style={"width": "100%", "height": "100%", "border": "none"},
             )
+            return viewer, "pdf"
 
-            # Force refresh
-            st.rerun()
+    return "Error loading PDF", "pdf"
 
-    # Document viewer tab
-    with col2:
-        st.title("Document Viewer")
-        if st.session_state.selected_document:
-            doc = st.session_state.selected_document
-            st.subheader(f"Viewing: {doc['filename']}")
 
-            # Fetch and display PDF content
-            pdf_content = doc_manager.get_document_content(doc["filename"])
-            if pdf_content:
-                display_pdf(pdf_content)
-                logger.info(f"Successfully displayed document: {doc['filename']}")
-        else:
-            st.info("Select a document from the sidebar to view it here")
+@callback(
+    Output("upload-status", "children"),
+    Input("upload-document", "contents"),
+    State("upload-document", "filename"),
+)
+def upload_document(contents, filename):
+    if contents is None:
+        return ""
+
+    content_type, content_string = contents.split(",")
+    decoded = base64.b64decode(content_string)
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    logger.debug(f"Saving file to: {file_path}")
+    with open(file_path, "wb") as f:
+        f.write(decoded)
+    logger.info(f"File saved successfully: {filename}")
+
+    with open(file_path, "rb") as f:
+        success = doc_manager.upload_document(f)
+
+    if success:
+        # Move documents from upload dir to document dir
+        logger.debug("Moving processed document to document storage directory")
+        for filename in os.listdir(UPLOAD_DIR):
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            shutil.move(file_path, DOCUMENT_DIR)
+        shutil.rmtree(UPLOAD_DIR)
+        logger.info("Document moved to storage directory succesfully")
+        return html.Div("Upload successful!", style={"color": "#2ecc71"})
+    return html.Div("Upload failed!", style={"color": "#e74c3c"})
+
+
+@callback(
+    [Output("chat-messages", "children"), Output("chat-input", "value")],
+    Input("send-button", "n_clicks"),
+    [State("chat-input", "value"), State("chat-messages", "children")],
+    prevent_initial_call=True,
+)
+def update_chat(n_clicks, input_value, current_messages):
+    if not input_value:
+        return current_messages or [], ""
+
+    current_messages = current_messages or []
+
+    # Add user message
+    user_message = dbc.Card(
+        dbc.CardBody(input_value),
+        className="mb-2 ml-auto",
+        style={
+            "width": "70%",
+            "margin-left": "30%",
+            "backgroundColor": "#2c3e50",
+            "color": "white",
+        },
+    )
+
+    # Get bot response
+    response = chat_interface.get_response(input_value)
+
+    # Create source links
+    source_links = []
+    for filename, page in response.get("source_documents", []):
+        filename = filename.split(os.sep)[-1]
+        page_num = int(page.split(": ")[-1])
+        source_links.append(
+            html.A(
+                f"{filename} (page {page_num})",
+                id={"type": "source-link", "index": f"{filename}:{page_num}"},
+                className="mr-2 text-info",
+                style={"cursor": "pointer", "marginRight": "10px"},
+                n_clicks=0,
+            )
+        )
+
+    # Add bot message with markdown support and clickable sources
+    bot_message = dbc.Card(
+        [
+            dbc.CardBody(
+                [
+                    # Use dcc.Markdown instead of html.P for markdown rendering
+                    dcc.Markdown(
+                        response["answer"],
+                        # Add styling for markdown content
+                        style={
+                            "backgroundColor": "#34495e",
+                            "padding": "10px",
+                            "borderRadius": "5px",
+                        },
+                    ),
+                    html.Small([html.P(["Sources: "] + source_links)], className="text-muted"),
+                ]
+            )
+        ],
+        className="mb-2",
+        style={"width": "70%", "backgroundColor": "#34495e", "color": "white"},
+    )
+
+    return current_messages + [user_message, bot_message], ""
 
 
 if __name__ == "__main__":
-    main()
+    app.run_server(debug=True)
