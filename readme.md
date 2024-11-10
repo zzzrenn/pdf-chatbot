@@ -8,3 +8,6 @@
 - [x] Add clickable document sources
 - [ ] Remove sources under certain threshold
 - [ ] Improve frontend UI
+
+### Web UI
+![app_image](https://raw.githubusercontent.com/zzzrenn/pdf-chatbot/main/.images/pdf-chatbot.png)
